@@ -51,7 +51,7 @@ impl<'a> BlobIngestion<'a> {
         )?
         .use_target_size(blob_file_size)
         .use_compression(crate::vlog::blob_file::writer::BlobCompression::Standard(
-            kv.compression,
+            kv.compression.clone(),
         ));
 
         let separation_threshold = kv.separation_threshold;

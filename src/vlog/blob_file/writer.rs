@@ -23,7 +23,7 @@ pub const BLOB_HEADER_LEN: usize = BLOB_HEADER_MAGIC.len()
     + std::mem::size_of::<u32>() // Real value length
     + std::mem::size_of::<u32>(); // On-disk value length
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum BlobCompression {
     Standard(CompressionType),
     Passthrough(CompressionType),
@@ -148,6 +148,19 @@ impl Writer {
             #[cfg(feature = "lz4")]
             BlobCompression::Standard(CompressionType::Lz4) => {
                 std::borrow::Cow::Owned(lz4_flex::compress(value))
+            }
+
+            #[cfg(feature = "zstd")]
+            BlobCompression::Standard(CompressionType::Zstd { level }) => std::borrow::Cow::Owned(
+                zstd::bulk::compress(value, *level).map_err(crate::Error::Io)?,
+            ),
+
+            #[cfg(feature = "zstd")]
+            BlobCompression::Standard(CompressionType::ZstdDict { level, dict }) => {
+                std::borrow::Cow::Owned(
+                    crate::compression::dict_cache::compress(value, *level, dict)
+                        .map_err(crate::Error::Io)?,
+                )
             }
 
             _ => std::borrow::Cow::Borrowed(value),

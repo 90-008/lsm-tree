@@ -232,7 +232,9 @@ impl<'a, 'b: 'a> StreamFilterAdapter<'a, 'b> {
             )?
             .use_target_size(blob_opts.file_target_size)
             .use_compression(
-                crate::vlog::blob_file::writer::BlobCompression::Standard(blob_opts.compression),
+                crate::vlog::blob_file::writer::BlobCompression::Standard(
+                    blob_opts.compression.clone(),
+                ),
             );
 
             self.blob_writer.insert(writer)

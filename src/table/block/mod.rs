@@ -23,7 +23,7 @@ use crate::{
     table::BlockHandle,
     Checksum, CompressionType, Slice,
 };
-use std::fs::File;
+use std::{borrow::Cow, fs::File};
 
 /// A block on disk
 ///
@@ -57,21 +57,32 @@ impl Block {
             uncompressed_length: data.len() as u32,
         };
 
-        let data = match compression {
-            CompressionType::None => data,
+        let data: Cow<[u8]> = match compression {
+            CompressionType::None => Cow::Borrowed(data),
 
             #[cfg(feature = "lz4")]
-            CompressionType::Lz4 => &lz4_flex::compress(data),
+            CompressionType::Lz4 => Cow::Owned(lz4_flex::compress(data)),
+
+            #[cfg(feature = "zstd")]
+            CompressionType::Zstd { level } => {
+                Cow::Owned(zstd::bulk::compress(data, level).map_err(crate::Error::Io)?)
+            }
+
+            #[cfg(feature = "zstd")]
+            CompressionType::ZstdDict { level, dict } => Cow::Owned(
+                crate::compression::dict_cache::compress(data, level, &dict)
+                    .map_err(crate::Error::Io)?,
+            ),
         };
 
         #[expect(clippy::cast_possible_truncation, reason = "blocks are limited to u32")]
         {
             header.data_length = data.len() as u32;
-            header.checksum = Checksum::from_raw(crate::hash::hash128(data));
+            header.checksum = Checksum::from_raw(crate::hash::hash128(&data));
         }
 
         header.encode_into(&mut writer)?;
-        writer.write_all(data)?;
+        writer.write_all(&data)?;
 
         log::trace!(
             "Writing block with size {}B (compressed: {}B) (excluding header of {}B)",
@@ -111,9 +122,27 @@ impl Block {
                     unsafe { Slice::builder_unzeroed(header.uncompressed_length as usize) };
 
                 lz4_flex::decompress_into(&raw_data, &mut builder)
-                    .map_err(|_| crate::Error::Decompress(compression))?;
+                    .map_err(|_| crate::Error::Decompress(CompressionType::Lz4))?;
 
                 builder.freeze().into()
+            }
+
+            #[cfg(feature = "zstd")]
+            CompressionType::Zstd { level } => {
+                zstd::bulk::decompress(&raw_data, header.uncompressed_length as usize)
+                    .map_err(|_| crate::Error::Decompress(CompressionType::Zstd { level }))?
+                    .into()
+            }
+
+            #[cfg(feature = "zstd")]
+            CompressionType::ZstdDict { level, dict } => {
+                crate::compression::dict_cache::decompress(
+                    &raw_data,
+                    header.uncompressed_length as usize,
+                    &dict,
+                )
+                .map_err(|_| crate::Error::Decompress(CompressionType::ZstdDict { level, dict }))?
+                .into()
             }
         };
 
@@ -172,9 +201,31 @@ impl Block {
                     unsafe { Slice::builder_unzeroed(header.uncompressed_length as usize) };
 
                 lz4_flex::decompress_into(raw_data, &mut builder)
-                    .map_err(|_| crate::Error::Decompress(compression))?;
+                    .map_err(|_| crate::Error::Decompress(CompressionType::Lz4))?;
 
                 builder.freeze().into()
+            }
+
+            #[cfg(feature = "zstd")]
+            CompressionType::Zstd { level } => {
+                #[expect(clippy::indexing_slicing)]
+                let raw_data = &buf[Header::serialized_len()..];
+                zstd::bulk::decompress(raw_data, header.uncompressed_length as usize)
+                    .map_err(|_| crate::Error::Decompress(CompressionType::Zstd { level }))?
+                    .into()
+            }
+
+            #[cfg(feature = "zstd")]
+            CompressionType::ZstdDict { level, dict } => {
+                #[expect(clippy::indexing_slicing)]
+                let raw_data = &buf[Header::serialized_len()..];
+                crate::compression::dict_cache::decompress(
+                    raw_data,
+                    header.uncompressed_length as usize,
+                    &dict,
+                )
+                .map_err(|_| crate::Error::Decompress(CompressionType::ZstdDict { level, dict }))?
+                .into()
             }
         };
 
@@ -208,6 +259,22 @@ mod tests {
 
         Ok(())
     }
+    #[test]
+    #[cfg(feature = "zstd")]
+    fn block_roundtrip_zstd() -> crate::Result<()> {
+        let mut writer = vec![];
+        Block::write_into(
+            &mut writer,
+            b"abcdefabcdefabcdef",
+            BlockType::Data,
+            CompressionType::Zstd { level: 3 },
+        )?;
+        let mut reader = &writer[..];
+        let block = Block::from_reader(&mut reader, CompressionType::Zstd { level: 3 })?;
+        assert_eq!(b"abcdefabcdefabcdef", &*block.data);
+        Ok(())
+    }
+
     #[test]
     #[cfg(feature = "lz4")]
     fn block_roundtrip_lz4() -> crate::Result<()> {

@@ -32,7 +32,7 @@ impl Scanner {
         // TODO: benchmarks were inconclusive on SSD, not much difference between 4KB - 2MB
         let mut reader = BufReader::with_capacity(8 * 4_096, File::open(path)?);
 
-        let block = Self::fetch_next_block(&mut reader, compression)?;
+        let block = Self::fetch_next_block(&mut reader, compression.clone())?;
         let iter = OwnedDataBlockIter::new(block, DataBlock::iter);
 
         Ok(Self {
@@ -84,7 +84,10 @@ impl Iterator for Scanner {
             }
 
             // Init new block
-            let block = fail_iter!(Self::fetch_next_block(&mut self.reader, self.compression));
+            let block = fail_iter!(Self::fetch_next_block(
+                &mut self.reader,
+                self.compression.clone()
+            ));
             self.iter = OwnedDataBlockIter::new(block, DataBlock::iter);
 
             self.read_count += 1;

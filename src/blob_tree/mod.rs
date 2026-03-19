@@ -427,7 +427,7 @@ impl AbstractTree for BlobTree {
         )?
         .use_target_size(kv_opts.file_target_size)
         .use_compression(crate::vlog::blob_file::writer::BlobCompression::Standard(
-            kv_opts.compression,
+            kv_opts.compression.clone(),
         ));
 
         let separation_threshold = kv_opts.separation_threshold;

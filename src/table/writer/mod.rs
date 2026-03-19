@@ -161,14 +161,14 @@ impl Writer {
     #[must_use]
     pub fn use_partitioned_filter(mut self) -> Self {
         self.filter_writer = Box::new(filter::PartitionedFilterWriter::new(self.bloom_policy))
-            .use_tli_compression(self.index_block_compression);
+            .use_tli_compression(self.index_block_compression.clone());
         self
     }
 
     #[must_use]
     pub fn use_partitioned_index(mut self) -> Self {
         self.index_writer = Box::new(index::PartitionedIndexWriter::new())
-            .use_compression(self.index_block_compression);
+            .use_compression(self.index_block_compression.clone());
         self
     }
 
@@ -220,8 +220,8 @@ impl Writer {
 
     #[must_use]
     pub fn use_index_block_compression(mut self, compression: CompressionType) -> Self {
-        self.index_block_compression = compression;
-        self.index_writer = self.index_writer.use_compression(compression);
+        self.index_block_compression = compression.clone();
+        self.index_writer = self.index_writer.use_compression(compression.clone());
         self.filter_writer = self.filter_writer.use_tli_compression(compression);
         self
     }
@@ -318,7 +318,7 @@ impl Writer {
             &mut self.file_writer,
             &self.block_buffer,
             super::block::BlockType::Data,
-            self.data_block_compression,
+            self.data_block_compression.clone(),
         )?;
 
         self.meta.uncompressed_size += u64::from(header.uncompressed_length);

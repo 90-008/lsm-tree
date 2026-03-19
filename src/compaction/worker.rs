@@ -476,7 +476,7 @@ fn merge_tables(
                 .use_target_size(blob_opts.file_target_size)
                 .use_compression(
                     crate::vlog::blob_file::writer::BlobCompression::Passthrough(
-                        blob_opts.compression,
+                        blob_opts.compression.clone(),
                     ),
                 );
 
