@@ -137,6 +137,17 @@ impl Writer {
 
             #[cfg(feature = "lz4")]
             CompressionType::Lz4 => std::borrow::Cow::Owned(lz4_flex::compress(value)),
+
+            #[cfg(feature = "zstd")]
+            CompressionType::Zstd { level } => std::borrow::Cow::Owned(
+                zstd::bulk::compress(value, *level).map_err(crate::Error::Io)?,
+            ),
+
+            #[cfg(feature = "zstd")]
+            CompressionType::ZstdDict { level, dict } => std::borrow::Cow::Owned(
+                crate::compression::dict_cache::compress(value, *level, dict)
+                    .map_err(crate::Error::Io)?,
+            ),
         };
 
         let checksum = {

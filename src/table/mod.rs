@@ -216,7 +216,7 @@ impl Table {
         self.load_block(
             handle,
             BlockType::Data,
-            self.metadata.data_block_compression,
+            self.metadata.data_block_compression.clone(),
         )
         .map(DataBlock::new)
     }
@@ -364,7 +364,7 @@ impl Table {
         Scanner::new(
             &self.path,
             block_count,
-            self.metadata.data_block_compression,
+            self.metadata.data_block_compression.clone(),
             self.global_seqno(),
         )
     }
@@ -400,7 +400,7 @@ impl Table {
             index_iter,
             self.file_accessor.clone(),
             self.cache.clone(),
-            self.metadata.data_block_compression,
+            self.metadata.data_block_compression.clone(),
             #[cfg(feature = "metrics")]
             self.metrics.clone(),
         );
@@ -489,12 +489,12 @@ impl Table {
                 regions.tli,
             );
 
-            let block = Self::read_tli(&regions, &file, metadata.index_block_compression)?;
+            let block = Self::read_tli(&regions, &file, metadata.index_block_compression.clone())?;
 
             BlockIndexImpl::TwoLevel(TwoLevelBlockIndex {
                 top_level_index: block,
                 cache: cache.clone(),
-                compression: metadata.index_block_compression,
+                compression: metadata.index_block_compression.clone(),
                 path: Arc::clone(&file_path),
                 file_accessor: file_accessor.clone(),
                 table_id: (tree_id, metadata.id).into(),
@@ -508,14 +508,14 @@ impl Table {
                 regions.tli,
             );
 
-            let block = Self::read_tli(&regions, &file, metadata.index_block_compression)?;
+            let block = Self::read_tli(&regions, &file, metadata.index_block_compression.clone())?;
             BlockIndexImpl::Full(FullBlockIndex::new(block))
         } else {
             log::trace!("Creating volatile, full block index");
 
             BlockIndexImpl::VolatileFull(VolatileBlockIndex {
                 cache: cache.clone(),
-                compression: metadata.index_block_compression,
+                compression: metadata.index_block_compression.clone(),
                 file_accessor: file_accessor.clone(),
                 handle: regions.tli,
                 path: Arc::clone(&file_path),
@@ -527,8 +527,11 @@ impl Table {
         };
 
         let pinned_filter_index = if let Some(filter_tli_handle) = regions.filter_tli {
-            let block =
-                Block::from_file(&file, filter_tli_handle, metadata.index_block_compression)?;
+            let block = Block::from_file(
+                &file,
+                filter_tli_handle,
+                metadata.index_block_compression.clone(),
+            )?;
             Some(IndexBlock::new(block))
         } else {
             None

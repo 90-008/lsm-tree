@@ -256,7 +256,7 @@ impl Iterator for Iter {
                         &self.cache,
                         &BlockHandle::new(handle.offset(), handle.size()),
                         crate::table::block::BlockType::Data,
-                        self.compression,
+                        self.compression.clone(),
                         #[cfg(feature = "metrics")]
                         &self.metrics,
                     ))
@@ -377,7 +377,7 @@ impl DoubleEndedIterator for Iter {
                         &self.cache,
                         &BlockHandle::new(handle.offset(), handle.size()),
                         crate::table::block::BlockType::Data,
-                        self.compression,
+                        self.compression.clone(),
                         #[cfg(feature = "metrics")]
                         &self.metrics,
                     ))

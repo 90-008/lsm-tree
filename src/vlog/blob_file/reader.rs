@@ -90,9 +90,28 @@ impl<'a> Reader<'a> {
                 let mut builder = unsafe { UserValue::builder_unzeroed(real_val_len as usize) };
 
                 lz4_flex::decompress_into(&raw_data, &mut builder)
-                    .map_err(|_| crate::Error::Decompress(self.blob_file.0.meta.compression))?;
+                    .map_err(|_| crate::Error::Decompress(CompressionType::Lz4))?;
 
                 builder.freeze().into()
+            }
+
+            #[cfg(feature = "zstd")]
+            CompressionType::Zstd { level } => {
+                zstd::bulk::decompress(&raw_data, real_val_len as usize)
+                    .map_err(|_| crate::Error::Decompress(CompressionType::Zstd { level: *level }))?
+                    .into()
+            }
+
+            #[cfg(feature = "zstd")]
+            CompressionType::ZstdDict { level, dict } => {
+                crate::compression::dict_cache::decompress(&raw_data, real_val_len as usize, dict)
+                    .map_err(|_| {
+                        crate::Error::Decompress(CompressionType::ZstdDict {
+                            level: *level,
+                            dict: dict.clone(),
+                        })
+                    })?
+                    .into()
             }
         };
 
