@@ -338,6 +338,69 @@ impl Table {
         Ok(None)
     }
 
+    /// Reads up to `limit` raw data block payloads from this table.
+    ///
+    /// Each returned [`Slice`] contains the uncompressed block payload bytes —
+    /// the same bytes that are fed into the compression codec when writing.
+    /// These are suitable as training samples for `train_zstd_dict`.
+    ///
+    /// `predicate` is called with the first and last user key of each block.
+    /// If it returns `false` the block is skipped and not counted toward `limit`.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn sample_data_blocks<F: Fn(&[u8], &[u8]) -> bool>(
+        &self,
+        limit: usize,
+        predicate: &F,
+    ) -> crate::Result<Vec<crate::Slice>> {
+        use crate::table::block::ParsedItem;
+        use std::{fs::File, io::BufReader};
+
+        let block_count = self.metadata.data_block_count as usize;
+
+        if limit == 0 || block_count == 0 {
+            return Ok(vec![]);
+        }
+
+        let mut reader = BufReader::with_capacity(8 * 4_096, File::open(&*self.path)?);
+        let mut samples = Vec::new();
+        let mut read = 0;
+
+        while samples.len() < limit && read < block_count {
+            let block =
+                Block::from_reader(&mut reader, self.metadata.data_block_compression.clone())?;
+            read += 1;
+
+            if block.header.block_type != BlockType::Data {
+                break;
+            }
+
+            let data_block = DataBlock::new(block);
+            let mut iter = data_block.iter();
+
+            let include = match (iter.next(), iter.next_back()) {
+                (Some(first), Some(last)) => {
+                    let first_key = first.materialize(&data_block.inner.data);
+                    let last_key = last.materialize(&data_block.inner.data);
+                    predicate(&first_key.key.user_key, &last_key.key.user_key)
+                }
+                (Some(only), None) => {
+                    let key = only.materialize(&data_block.inner.data);
+                    predicate(&key.key.user_key, &key.key.user_key)
+                }
+                _ => false,
+            };
+
+            if include {
+                samples.push(data_block.inner.data);
+            }
+        }
+
+        Ok(samples)
+    }
+
     /// Creates a scanner over the `Table`.
     ///
     /// The scanner is ĺogically the same as a normal iter(),
