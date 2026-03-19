@@ -1183,4 +1183,43 @@ impl Tree {
 
         Ok(())
     }
+
+    /// Collects up to `limit` raw data block payloads from on-disk tables.
+    ///
+    /// Skips L0 (where files have overlapping key ranges and are less
+    /// representative). Iterates L1 and deeper levels of the current version.
+    ///
+    /// `predicate` receives the first and last user key of each candidate block;
+    /// return `false` to skip a block (it won't count toward `limit`).
+    ///
+    /// Each returned [`Slice`] contains the uncompressed bytes that the
+    /// compression codec would receive. Useful for training a Zstandard
+    /// dictionary via [`train_zstd_dict`].
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn sample_data_blocks<F: Fn(&[u8], &[u8]) -> bool>(
+        &self,
+        limit: usize,
+        predicate: F,
+    ) -> crate::Result<Vec<crate::Slice>> {
+        let version = self.current_version();
+        let mut samples = Vec::new();
+
+        // Skip L0: its files overlap and are less representative
+        'outer: for level in version.iter_levels().skip(1) {
+            for run in level.iter() {
+                for table in run.iter() {
+                    let remaining = limit.saturating_sub(samples.len());
+                    if remaining == 0 {
+                        break 'outer;
+                    }
+                    samples.extend(table.sample_data_blocks(remaining, &predicate)?);
+                }
+            }
+        }
+
+        Ok(samples)
+    }
 }
