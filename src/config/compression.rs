@@ -21,8 +21,8 @@ impl CompressionPolicy {
         #[expect(clippy::expect_used, reason = "policy is expected not to be empty")]
         self.0
             .get(level)
-            .copied()
-            .unwrap_or_else(|| self.last().copied().expect("policy should not be empty"))
+            .cloned()
+            .unwrap_or_else(|| self.last().cloned().expect("policy should not be empty"))
     }
 
     /// Disables all compression.

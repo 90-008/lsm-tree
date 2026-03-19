@@ -158,14 +158,14 @@ impl MultiWriter {
 
     #[must_use]
     pub fn use_data_block_compression(mut self, compression: CompressionType) -> Self {
-        self.data_block_compression = compression;
+        self.data_block_compression = compression.clone();
         self.writer = self.writer.use_data_block_compression(compression);
         self
     }
 
     #[must_use]
     pub fn use_index_block_compression(mut self, compression: CompressionType) -> Self {
-        self.index_block_compression = compression;
+        self.index_block_compression = compression.clone();
         self.writer = self.writer.use_index_block_compression(compression);
         self
     }
@@ -185,8 +185,8 @@ impl MultiWriter {
         let path = self.base_path.join(new_table_id.to_string());
 
         let mut new_writer = Writer::new(path, new_table_id, self.initial_level)?
-            .use_data_block_compression(self.data_block_compression)
-            .use_index_block_compression(self.index_block_compression)
+            .use_data_block_compression(self.data_block_compression.clone())
+            .use_index_block_compression(self.index_block_compression.clone())
             .use_data_block_size(self.data_block_size)
             .use_data_block_restart_interval(self.data_block_restart_interval)
             .use_index_block_restart_interval(self.index_block_restart_interval)

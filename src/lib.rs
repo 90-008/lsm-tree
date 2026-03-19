@@ -170,6 +170,9 @@ pub use {
     value::InternalValue,
 };
 
+#[cfg(feature = "zstd")]
+pub use compression::{dict_cache, train_zstd_dict};
+
 pub use {
     abstract_tree::AbstractTree,
     any_tree::AnyTree,

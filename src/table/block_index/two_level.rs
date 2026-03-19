@@ -46,7 +46,7 @@ impl TwoLevelBlockIndex {
             path: self.path.clone(),
             file_accessor: self.file_accessor.clone(),
             cache: self.cache.clone(),
-            compression: self.compression,
+            compression: self.compression.clone(),
 
             #[cfg(feature = "metrics")]
             metrics: self.metrics.clone(),
@@ -132,7 +132,7 @@ impl Iterator for Iter {
                     &self.cache,
                     &handle.into_inner(),
                     BlockType::Index,
-                    self.compression,
+                    self.compression.clone(),
                     #[cfg(feature = "metrics")]
                     &self.metrics,
                 ));
@@ -195,7 +195,7 @@ impl DoubleEndedIterator for Iter {
                     &self.cache,
                     &handle.into_inner(),
                     BlockType::Index,
-                    self.compression,
+                    self.compression.clone(),
                     #[cfg(feature = "metrics")]
                     &self.metrics,
                 ));

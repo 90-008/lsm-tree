@@ -59,7 +59,7 @@ impl PartitionedIndexWriter {
             &mut self.block_buffer,
             &bytes,
             crate::table::block::BlockType::Index,
-            self.compression,
+            self.compression.clone(),
         )?;
 
         #[expect(
@@ -121,7 +121,7 @@ impl PartitionedIndexWriter {
             file_writer,
             &bytes,
             crate::table::block::BlockType::Index,
-            self.compression,
+            self.compression.clone(),
         )?;
 
         #[expect(

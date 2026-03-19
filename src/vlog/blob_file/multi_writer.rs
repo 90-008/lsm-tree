@@ -104,12 +104,12 @@ impl MultiWriter {
         let blob_file_path = self.folder.join(new_blob_file_id.to_string());
 
         let new_writer = Writer::new(blob_file_path, new_blob_file_id, self.tree_id)?
-            .use_compression(self.compression);
+            .use_compression(self.compression.clone());
 
         let old_writer = std::mem::replace(&mut self.active_writer, new_writer);
         let blob_file = Self::consume_writer(
             old_writer,
-            self.passthrough_compression,
+            self.passthrough_compression.clone(),
             self.descriptor_table.clone(),
         )?;
         self.results.extend(blob_file);
