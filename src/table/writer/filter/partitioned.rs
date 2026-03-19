@@ -118,7 +118,7 @@ impl PartitionedFilterWriter {
             file_writer,
             &bytes,
             crate::table::block::BlockType::Index,
-            self.compression,
+            self.compression.clone(),
         )?;
 
         #[expect(

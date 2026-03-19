@@ -83,7 +83,7 @@ impl MultiWriter {
     /// set the compression type in the metadata.
     pub(crate) fn use_passthrough_compression(mut self, compression: CompressionType) -> Self {
         assert_eq!(self.compression, CompressionType::None);
-        self.passthrough_compression = compression;
+        self.passthrough_compression.clone_from(&compression);
         self.active_writer.passthrough_compression = compression;
         self
     }
@@ -105,8 +105,8 @@ impl MultiWriter {
         let blob_file_path = self.folder.join(new_blob_file_id.to_string());
 
         let new_writer = Writer::new(blob_file_path, new_blob_file_id, self.tree_id)?
-            .use_compression(self.compression)
-            .use_passthrough_compression(self.passthrough_compression);
+            .use_compression(self.compression.clone())
+            .use_passthrough_compression(self.passthrough_compression.clone());
 
         let old_writer = std::mem::replace(&mut self.active_writer, new_writer);
         let blob_file = Self::consume_writer(old_writer, self.descriptor_table.clone())?;

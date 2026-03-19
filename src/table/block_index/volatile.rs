@@ -70,7 +70,7 @@ impl Iter {
             file_accessor: index.file_accessor.clone(),
             cache: index.cache.clone(),
             handle: index.handle,
-            compression: index.compression,
+            compression: index.compression.clone(),
 
             lo: None,
             hi: None,
@@ -107,7 +107,7 @@ impl Iterator for Iter {
                 &self.cache,
                 &self.handle,
                 BlockType::Index,
-                self.compression,
+                self.compression.clone(),
                 #[cfg(feature = "metrics")]
                 &self.metrics,
             ));
@@ -147,7 +147,7 @@ impl DoubleEndedIterator for Iter {
                 &self.cache,
                 &self.handle,
                 BlockType::Index,
-                self.compression,
+                self.compression.clone(),
                 #[cfg(feature = "metrics")]
                 &self.metrics,
             ));
