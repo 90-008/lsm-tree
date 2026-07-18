@@ -84,6 +84,44 @@ impl std::fmt::Debug for Table {
     }
 }
 
+/// verdict for [`Table::sample_data_blocks_from`] predicates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SampleVerdict {
+    /// include the block as a sample.
+    Include,
+    /// skip the block and keep scanning.
+    Exclude,
+    /// stop sampling entirely (e.g. the scan moved past the wanted key range).
+    Abort,
+}
+
+/// extracts the first and last user key of a data block, along with its
+/// uncompressed payload bytes.
+fn sample_candidate(data_block: DataBlock) -> Option<(Vec<u8>, Vec<u8>, crate::Slice)> {
+    use crate::table::block::ParsedItem;
+
+    let mut iter = data_block.iter();
+
+    let (first_key, last_key) = match (iter.next(), iter.next_back()) {
+        (Some(first), Some(last)) => {
+            let first_key = first.materialize(&data_block.inner.data);
+            let last_key = last.materialize(&data_block.inner.data);
+            (
+                first_key.key.user_key.to_vec(),
+                last_key.key.user_key.to_vec(),
+            )
+        }
+        (Some(only), None) => {
+            let key = only.materialize(&data_block.inner.data);
+            let key = key.key.user_key.to_vec();
+            (key.clone(), key)
+        }
+        _ => return None,
+    };
+
+    Some((first_key, last_key, data_block.inner.data))
+}
+
 impl Table {
     #[must_use]
     pub fn global_seqno(&self) -> SeqNo {
@@ -351,12 +389,11 @@ impl Table {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn sample_data_blocks<F: Fn(&[u8], &[u8]) -> bool>(
+    pub fn sample_data_blocks<F: FnMut(&[u8], &[u8]) -> bool>(
         &self,
         limit: usize,
-        predicate: &F,
+        mut predicate: F,
     ) -> crate::Result<Vec<crate::Slice>> {
-        use crate::table::block::ParsedItem;
         use std::{fs::File, io::BufReader};
 
         let block_count = self.metadata.data_block_count as usize;
@@ -378,28 +415,95 @@ impl Table {
                 break;
             }
 
-            let data_block = DataBlock::new(block);
-            let mut iter = data_block.iter();
-
-            let include = match (iter.next(), iter.next_back()) {
-                (Some(first), Some(last)) => {
-                    let first_key = first.materialize(&data_block.inner.data);
-                    let last_key = last.materialize(&data_block.inner.data);
-                    predicate(&first_key.key.user_key, &last_key.key.user_key)
-                }
-                (Some(only), None) => {
-                    let key = only.materialize(&data_block.inner.data);
-                    predicate(&key.key.user_key, &key.key.user_key)
-                }
-                _ => false,
+            let Some((first_key, last_key, payload)) = sample_candidate(DataBlock::new(block))
+            else {
+                continue;
             };
 
-            if include {
-                samples.push(data_block.inner.data);
+            if predicate(&first_key, &last_key) {
+                samples.push(payload);
             }
         }
 
         Ok(samples)
+    }
+
+    /// Reads up to `limit` raw data block payloads from this table, starting
+    /// at the first block whose key range covers `start_key` (or from the
+    /// beginning of the table when `start_key` is `None`).
+    ///
+    /// Unlike [`Table::sample_data_blocks`], the start position is located via
+    /// the block index instead of scanning the file from the first block, so
+    /// sampling a narrow key range does not require reading (and decompressing)
+    /// every preceding block in the table.
+    ///
+    /// `predicate` is called with the first and last user key of each block and
+    /// returns a [`SampleVerdict`]: included blocks count toward `limit`,
+    /// excluded blocks are skipped, and [`SampleVerdict::Abort`] stops the scan
+    /// immediately.
+    ///
+    /// Returns the collected samples and whether the predicate aborted the scan.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn sample_data_blocks_from<F: FnMut(&[u8], &[u8]) -> SampleVerdict>(
+        &self,
+        start_key: Option<&[u8]>,
+        limit: usize,
+        predicate: &mut F,
+    ) -> crate::Result<(Vec<crate::Slice>, bool)> {
+        if limit == 0 || self.metadata.data_block_count == 0 {
+            return Ok((vec![], false));
+        }
+
+        // without a start key, the sequential reader is cheaper than the index
+        if start_key.is_none() {
+            let mut aborted = false;
+            let samples =
+                self.sample_data_blocks(limit, |first, last| match predicate(first, last) {
+                    SampleVerdict::Include => true,
+                    SampleVerdict::Exclude => false,
+                    SampleVerdict::Abort => {
+                        aborted = true;
+                        false
+                    }
+                })?;
+            return Ok((samples, aborted));
+        }
+
+        let Some(mut index_iter) = self
+            .block_index
+            .forward_reader(start_key.expect("checked"), u64::MAX)
+        else {
+            return Ok((vec![], false));
+        };
+
+        let mut samples = Vec::new();
+        let mut aborted = false;
+
+        while samples.len() < limit {
+            let Some(handle) = index_iter.next() else {
+                break;
+            };
+            let handle = handle?;
+            let block = self.load_data_block(handle.as_ref())?;
+
+            let Some((first_key, last_key, payload)) = sample_candidate(block) else {
+                continue;
+            };
+
+            match predicate(&first_key, &last_key) {
+                SampleVerdict::Include => samples.push(payload),
+                SampleVerdict::Exclude => {}
+                SampleVerdict::Abort => {
+                    aborted = true;
+                    break;
+                }
+            }
+        }
+
+        Ok((samples, aborted))
     }
 
     /// Creates a scanner over the `Table`.

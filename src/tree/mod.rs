@@ -1209,10 +1209,10 @@ impl Tree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn sample_data_blocks<F: Fn(&[u8], &[u8]) -> bool>(
+    pub fn sample_data_blocks<F: FnMut(&[u8], &[u8]) -> bool>(
         &self,
         limit: usize,
-        predicate: F,
+        mut predicate: F,
     ) -> crate::Result<Vec<crate::Slice>> {
         let version = self.current_version();
         let mut samples = Vec::new();
@@ -1225,7 +1225,55 @@ impl Tree {
                     if remaining == 0 {
                         break 'outer;
                     }
-                    samples.extend(table.sample_data_blocks(remaining, &predicate)?);
+                    samples.extend(table.sample_data_blocks(remaining, &mut predicate)?);
+                }
+            }
+        }
+
+        Ok(samples)
+    }
+
+    /// Reads up to `limit` raw data block payloads from L1+ tables, starting
+    /// at the first block whose key range covers `start_key` (or from the
+    /// beginning when `start_key` is `None`).
+    ///
+    /// Tables entirely below `start_key` are skipped, and the start position
+    /// within each table is located via its block index, so sampling a narrow
+    /// key range costs O(range) rather than O(table). See
+    /// [`Table::sample_data_blocks_from`] for the predicate semantics.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn sample_data_blocks_from<F: FnMut(&[u8], &[u8]) -> crate::table::SampleVerdict>(
+        &self,
+        start_key: Option<&[u8]>,
+        limit: usize,
+        mut predicate: F,
+    ) -> crate::Result<Vec<crate::Slice>> {
+        let version = self.current_version();
+        let mut samples = Vec::new();
+
+        'outer: for level in version.iter_levels().skip(1) {
+            for run in level.iter() {
+                for table in run.iter() {
+                    let remaining = limit.saturating_sub(samples.len());
+                    if remaining == 0 {
+                        break 'outer;
+                    }
+
+                    if let Some(start) = start_key {
+                        if &table.metadata.key_range.max()[..] < start {
+                            continue;
+                        }
+                    }
+
+                    let (batch, aborted) =
+                        table.sample_data_blocks_from(start_key, remaining, &mut predicate)?;
+                    samples.extend(batch);
+                    if aborted {
+                        break 'outer;
+                    }
                 }
             }
         }
