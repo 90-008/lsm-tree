@@ -24,14 +24,38 @@ impl AnyTree {
     /// # Errors
     ///
     /// Will return `Err` if an IO error occurs.
-    pub fn sample_data_blocks<F: Fn(&[u8], &[u8]) -> bool>(
+    pub fn sample_data_blocks<F: FnMut(&[u8], &[u8]) -> bool>(
         &self,
         limit: usize,
-        predicate: F,
+        mut predicate: F,
     ) -> crate::Result<Vec<crate::Slice>> {
         match self {
-            Self::Standard(tree) => tree.sample_data_blocks(limit, predicate),
-            Self::Blob(blob_tree) => blob_tree.index.sample_data_blocks(limit, predicate),
+            Self::Standard(tree) => tree.sample_data_blocks(limit, &mut predicate),
+            Self::Blob(blob_tree) => blob_tree.index.sample_data_blocks(limit, &mut predicate),
+        }
+    }
+
+    /// Collects up to `limit` raw data block payloads from on-disk tables,
+    /// starting at the first block covering `start_key`.
+    ///
+    /// See [`Tree::sample_data_blocks_from`] for details.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if an IO error occurs.
+    pub fn sample_data_blocks_from<F: FnMut(&[u8], &[u8]) -> crate::table::SampleVerdict>(
+        &self,
+        start_key: Option<&[u8]>,
+        limit: usize,
+        mut predicate: F,
+    ) -> crate::Result<Vec<crate::Slice>> {
+        match self {
+            Self::Standard(tree) => tree.sample_data_blocks_from(start_key, limit, &mut predicate),
+            Self::Blob(blob_tree) => {
+                blob_tree
+                    .index
+                    .sample_data_blocks_from(start_key, limit, &mut predicate)
+            }
         }
     }
 }

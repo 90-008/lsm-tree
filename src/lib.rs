@@ -188,6 +188,7 @@ pub use {
     memtable::{Memtable, MemtableId},
     seqno::SequenceNumberCounter,
     slice::Slice,
+    table::SampleVerdict,
     tree::Tree,
     value::SeqNo,
     value_type::ValueType,
